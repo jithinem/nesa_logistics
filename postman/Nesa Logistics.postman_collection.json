@@ -1,0 +1,211 @@
+{
+  "info": {
+    "_postman_id": "f2d896b9-c69a-4f48-960a-0f861915033d",
+    "name": "Nesa Logistics API",
+    "description": "Requests for implemented Nesa Logistics endpoints. Set the Nesa Logistics Local environment before sending requests. Public registration creates OPERATOR users; route traffic/status mutations require an ADMIN token. Hub and delivery routers currently have no operation handlers, so those folders intentionally contain no requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "adminAccessToken", "value": "", "type": "string" },
+    { "key": "originHubId", "value": "6aec6d6412fcee66defb2b2f", "type": "string" },
+    { "key": "destinationHubId", "value": "6aec6d6412fcee66defb2b30", "type": "string" },
+    { "key": "routeId", "value": "650000000000000000000001", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+            "description": "Expected: HTTP 200 { \"success\": true, \"status\": \"live\" }."
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health/ready", "host": ["{{baseUrl}}"], "path": ["health", "ready"] },
+            "description": "Returns HTTP 200 when MongoDB is connected, or HTTP 503 when it is unavailable."
+          },
+          "response": []
+        },
+        {
+          "name": "Versioned API health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/health", "host": ["{{baseUrl}}"], "path": ["api", "v1", "health"] },
+            "description": "Expected: HTTP 200 { \"success\": true, \"message\": \"Service is healthy.\" }."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register operator",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.data && body.data.accessToken) {",
+                  "    pm.environment.set('accessToken', body.data.accessToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Logistics Operator\",\n  \"email\": \"operator@example.com\",\n  \"password\": \"Strong-password-123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "description": "Use a unique email address. Public registration always creates an OPERATOR. Password must be at least 12 characters and no more than 72 UTF-8 bytes. Expected HTTP 201: { success, message, data: { user: { id, name, email, role }, accessToken, tokenType, expiresIn } }. Saves accessToken to the active environment."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.data && body.data.accessToken) {",
+                  "    pm.environment.set('accessToken', body.data.accessToken);",
+                  "    if (body.data.user.role === 'ADMIN') {",
+                  "      pm.environment.set('adminAccessToken', body.data.accessToken);",
+                  "    }",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"operator@example.com\",\n  \"password\": \"Strong-password-123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "description": "Expected HTTP 200: { success, message, data: { user: { id, name, email, role }, accessToken, tokenType, expiresIn } }. Saves accessToken; if the user role is ADMIN, also saves adminAccessToken."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Routes",
+      "item": [
+        {
+          "name": "Optimize route",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originHub\": \"{{originHubId}}\",\n  \"destinationHub\": \"{{destinationHubId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/routes/optimize", "host": ["{{baseUrl}}"], "path": ["api", "routes", "optimize"] },
+            "description": "ADMIN or OPERATOR. Replace originHubId and destinationHubId with active MongoDB hub IDs. Expected HTTP 200: { success: true, message, data: { hubs: [{ id, name, code, location }], routes: [{ id, sourceHub, destinationHub, distance, travelTime, fuelCost, trafficCondition, trafficMultiplier, status }], totalDistance, totalTravelTime, totalFuelCost, totalCalculatedCost } }. No available path returns 404."
+          },
+          "response": []
+        },
+        {
+          "name": "Detect route cycles",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/routes/cycles", "host": ["{{baseUrl}}"], "path": ["api", "routes", "cycles"] },
+            "description": "ADMIN or OPERATOR. Expected HTTP 200: { success: true, message, data: { hasCycle, cycles: [{ hubs: [hubId, ..., hubId], routes: [routeId, ...] }], affectedHubs: [{ id, name, code }] } }. Includes directed cycles among active hubs, including blocked route records."
+          },
+          "response": []
+        },
+        {
+          "name": "Update route traffic",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trafficCondition\": \"HIGH\",\n  \"trafficMultiplier\": 1.7\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/routes/{{routeId}}/traffic", "host": ["{{baseUrl}}"], "path": ["api", "routes", "{{routeId}}", "traffic"] },
+            "description": "ADMIN only. Conditions: LOW, MEDIUM, HIGH. Multiplier must be greater than zero. Synchronously recalculates active deliveries. Expected HTTP 200: { success: true, message, data: { route: { id, trafficCondition, trafficMultiplier, status }, deliveries: [{ id, status, routeOptimizationStatus, currentRoute, totalDistance, totalTravelTime, totalFuelCost, totalCalculatedCost }] } }."
+          },
+          "response": []
+        },
+        {
+          "name": "Block or unblock route",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"BLOCKED\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/routes/{{routeId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "routes", "{{routeId}}", "status"] },
+            "description": "ADMIN only. Set status to BLOCKED or AVAILABLE. Synchronously recalculates active deliveries; a delivery with no alternative route gets an empty currentRoute and NO_AVAILABLE_PATH. Response shape matches Update route traffic."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Fastest available routes",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/analytics/fastest-routes", "host": ["{{baseUrl}}"], "path": ["api", "analytics", "fastest-routes"] },
+            "description": "ADMIN or OPERATOR. Expected HTTP 200: { success: true, message, data: [{ sourceHub: { id, name, code }, destinationHub: { id, name, code }, distance, travelTime, effectiveTravelTime, fuelCost, trafficCondition }] }. Returns up to five available routes in ascending effectiveTravelTime order."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Hubs (no endpoints implemented)",
+      "description": "The hub model exists and the router enforces ADMIN authorization, but no hub CRUD/list/detail handlers are mounted yet. This folder intentionally has no requests."
+    },
+    {
+      "name": "Deliveries (no endpoints implemented)",
+      "description": "The delivery model and recalculation behavior exist, but no delivery CRUD/list/detail handlers are mounted yet. This folder intentionally has no requests."
+    }
+  ]
+}
