@@ -15,9 +15,31 @@ import { noRequestSchemas } from "../../middleware/validation.middleware";
 import { authMiddleware } from "../../middleware/auth.middleware";
 import { roleMiddleware } from "../../middleware/role.middleware";
 import { UserRole } from "../../shared/types/logistics";
+import {
+  createRouteSchemas,
+  listRoutesSchemas,
+} from "./route-management.validation";
+import {
+  createRouteController,
+  listRoutesController,
+} from "./controllers/route-management.controller";
 
 const router = Router();
 
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware(UserRole.ADMIN),
+  validateRequest(createRouteSchemas),
+  createRouteController,
+);
+router.get(
+  "/",
+  authMiddleware,
+  roleMiddleware(UserRole.ADMIN, UserRole.OPERATOR),
+  validateRequest(listRoutesSchemas),
+  listRoutesController,
+);
 router.get(
   "/cycles",
   authMiddleware,

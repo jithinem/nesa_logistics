@@ -19,12 +19,16 @@ export const registerController: RequestHandler<
   unknown,
   ParsedQs,
   RegisterLocals
-> = asyncHandler<RegisterLocals>(async (_request, response) => {
-  const data = await registerUser(response.locals.validatedRequest.body);
+> = asyncHandler<RegisterLocals>(async (_request, response, next) => {
+  try {
+    const data = await registerUser(response.locals.validatedRequest.body);
 
-  response
-    .status(201)
-    .json(ApiResponse.success("User registered successfully.", data));
+    response
+      .status(201)
+      .json(ApiResponse.success("User registered successfully.", data));
+  } catch (error: unknown) {
+    next(error);
+  }
 });
 
 export const loginController: RequestHandler<
@@ -33,10 +37,14 @@ export const loginController: RequestHandler<
   unknown,
   ParsedQs,
   LoginLocals
-> = asyncHandler<LoginLocals>(async (_request, response) => {
-  const data = await loginUser(response.locals.validatedRequest.body);
+> = asyncHandler<LoginLocals>(async (_request, response, next) => {
+  try {
+    const data = await loginUser(response.locals.validatedRequest.body);
 
-  response
-    .status(200)
-    .json(ApiResponse.success("Login successful.", data));
+    response
+      .status(200)
+      .json(ApiResponse.success("Login successful.", data));
+  } catch (error: unknown) {
+    next(error);
+  }
 });

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "f2d896b9-c69a-4f48-960a-0f861915033d",
     "name": "Nesa Logistics API",
-    "description": "Requests for implemented Nesa Logistics endpoints. Set the Nesa Logistics Local environment before sending requests. Public registration creates OPERATOR users; route traffic/status mutations require an ADMIN token. Hub and delivery routers currently have no operation handlers, so those folders intentionally contain no requests.",
+    "description": "Requests for implemented Nesa Logistics endpoints. Set the Nesa Logistics Local environment before sending requests. Public registration creates OPERATOR users; hub operations, route creation, and route mutations require an ADMIN token.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -109,7 +109,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"operator@example.com\",\n  \"password\": \"Strong-password-123\"\n}",
+              "raw": "{\n  \"email\": \"admin@nesa.local\",\n  \"password\": \"gyF3suuHXa67Pi6b6YpeDJmmYadDMUD-\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
@@ -122,6 +122,47 @@
     {
       "name": "Routes",
       "item": [
+        {
+          "name": "Create route",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.data && body.data._id) pm.environment.set('routeId', body.data._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceHub\": \"{{originHubId}}\",\n  \"destinationHub\": \"{{destinationHubId}}\",\n  \"distance\": 25,\n  \"travelTime\": 45,\n  \"fuelCost\": 18,\n  \"trafficCondition\": \"MEDIUM\",\n  \"trafficMultiplier\": 1.2,\n  \"status\": \"AVAILABLE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/routes", "host": ["{{baseUrl}}"], "path": ["api", "routes"] },
+            "description": "ADMIN only. Both hubs must exist and be active. Expected HTTP 201: { success: true, message, data: createdRoute }. Saves the new route ID to routeId."
+          },
+          "response": []
+        },
+        {
+          "name": "List routes",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/routes?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["api", "routes"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] },
+            "description": "ADMIN or OPERATOR. Returns { success, message, data: { items: [...], pagination: { page, limit, totalItems, totalPages } } }. Page starts at 1; limit is 1-100."
+          },
+          "response": []
+        },
         {
           "name": "Optimize route",
           "request": {
@@ -200,12 +241,118 @@
       ]
     },
     {
-      "name": "Hubs (no endpoints implemented)",
-      "description": "The hub model exists and the router enforces ADMIN authorization, but no hub CRUD/list/detail handlers are mounted yet. This folder intentionally has no requests."
+      "name": "Hubs",
+      "item": [
+        {
+          "name": "Create hub",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.data && body.data._id) pm.environment.set('createdHubId', body.data._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Newark Logistics Hub\",\n  \"code\": \"EWR-NEW\",\n  \"location\": { \"latitude\": 40.6895, \"longitude\": -74.1745 },\n  \"isActive\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/hubs", "host": ["{{baseUrl}}"], "path": ["api", "hubs"] },
+            "description": "ADMIN only. Hub code must be unique. Expected HTTP 201: { success: true, message, data: createdHub }. Saves the returned ID as createdHubId."
+          },
+          "response": []
+        },
+        {
+          "name": "List hubs",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/hubs?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["api", "hubs"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] },
+            "description": "ADMIN only. Returns { success, message, data: { items: [...], pagination: { page, limit, totalItems, totalPages } } }."
+          },
+          "response": []
+        },
+        {
+          "name": "Find hub",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminAccessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/hubs/{{originHubId}}", "host": ["{{baseUrl}}"], "path": ["api", "hubs", "{{originHubId}}"] },
+            "description": "ADMIN only. Replace originHubId with a MongoDB hub ID. Returns { success, message, data: hub }; malformed IDs return 400 and missing hubs return 404."
+          },
+          "response": []
+        }
+      ]
     },
     {
-      "name": "Deliveries (no endpoints implemented)",
-      "description": "The delivery model and recalculation behavior exist, but no delivery CRUD/list/detail handlers are mounted yet. This folder intentionally has no requests."
+      "name": "Deliveries",
+      "item": [
+        {
+          "name": "Create delivery",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.data && body.data._id) pm.environment.set('deliveryId', body.data._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originHub\": \"{{originHubId}}\",\n  \"destinationHub\": \"{{destinationHubId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/deliveries", "host": ["{{baseUrl}}"], "path": ["api", "deliveries"] },
+            "description": "ADMIN or OPERATOR. Creates a planned delivery and initializes its route and metrics. Without a path, it is created with an empty route and NO_AVAILABLE_PATH. Expected HTTP 201: { success: true, message, data: delivery }. Saves deliveryId."
+          },
+          "response": []
+        },
+        {
+          "name": "List deliveries",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/deliveries?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["api", "deliveries"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] },
+            "description": "ADMIN or OPERATOR. Returns { success, message, data: { items: [...], pagination: { page, limit, totalItems, totalPages } } }."
+          },
+          "response": []
+        },
+        {
+          "name": "Find delivery",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/deliveries/{{deliveryId}}", "host": ["{{baseUrl}}"], "path": ["api", "deliveries", "{{deliveryId}}"] },
+            "description": "ADMIN or OPERATOR. Replace deliveryId with a MongoDB delivery ID. Returns { success, message, data: delivery }; malformed IDs return 400 and missing deliveries return 404."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

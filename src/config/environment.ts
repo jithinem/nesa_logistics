@@ -42,6 +42,68 @@ const parsePositiveInteger = (
   return parsed;
 };
 
+const parseAccessTokenLifetime = (
+  lifetimeValue: string | undefined,
+  secondsValue: string | undefined,
+): {
+  lifetime: `${number}s` | `${number}m` | `${number}h` | `${number}d`;
+  seconds: number;
+} => {
+  const configuredLifetime = lifetimeValue ?? "15m";
+  const seconds = parsePositiveInteger(
+    secondsValue,
+    "ACCESS_TOKEN_LIFETIME_SECONDS",
+    900,
+    31_536_000,
+  );
+  const match = /^([1-9]\d*)(s|m|h|d)$/.exec(configuredLifetime);
+
+  if (!match) {
+    throw new Error(
+      "ACCESS_TOKEN_LIFETIME must be a positive integer followed by s, m, h, or d.",
+    );
+  }
+
+  const amount = Number(match[1]);
+  let lifetime: `${number}s` | `${number}m` | `${number}h` | `${number}d`;
+  let lifetimeSeconds: number;
+
+  switch (match[2]) {
+    case "s":
+      lifetime = `${amount}s`;
+      lifetimeSeconds = amount;
+      break;
+    case "m":
+      lifetime = `${amount}m`;
+      lifetimeSeconds = amount * 60;
+      break;
+    case "h":
+      lifetime = `${amount}h`;
+      lifetimeSeconds = amount * 3_600;
+      break;
+    case "d":
+      lifetime = `${amount}d`;
+      lifetimeSeconds = amount * 86_400;
+      break;
+    default:
+      throw new Error(
+        "ACCESS_TOKEN_LIFETIME must be a positive integer followed by s, m, h, or d.",
+      );
+  }
+
+  if (
+    !Number.isSafeInteger(lifetimeSeconds) ||
+    lifetimeSeconds !== seconds ||
+    seconds > 31_536_000
+  ) {
+    throw new Error(
+      "ACCESS_TOKEN_LIFETIME and ACCESS_TOKEN_LIFETIME_SECONDS must describe the same duration of at most one year.",
+    );
+  }
+
+  return { lifetime, seconds };
+};
+
 const nodeEnv = process.env.NODE_ENV ?? "development";
 
 if (!["development", "production", "test"].includes(nodeEnv)) {
@@ -60,6 +122,11 @@ if (!jwtSecret || jwtSecret.length < 32) {
   throw new Error("JWT_SECRET must be set to at least 32 characters.");
 }
 
+const accessTokenLifetime = parseAccessTokenLifetime(
+  process.env.ACCESS_TOKEN_LIFETIME,
+  process.env.ACCESS_TOKEN_LIFETIME_SECONDS,
+);
+
 export const environment = {
   nodeEnv,
   port: parsePort(process.env.PORT),
@@ -71,6 +138,8 @@ export const environment = {
     100,
   ),
   jwtSecret,
+  accessTokenLifetime: accessTokenLifetime.lifetime,
+  accessTokenLifetimeSeconds: accessTokenLifetime.seconds,
   routeGraphCacheTtlMs: parseNonNegativeInteger(
     process.env.ROUTE_GRAPH_CACHE_TTL_MS,
     "ROUTE_GRAPH_CACHE_TTL_MS",

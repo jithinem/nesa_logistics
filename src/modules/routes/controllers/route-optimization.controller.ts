@@ -17,10 +17,14 @@ export const optimizeRouteController: RequestHandler<
   unknown,
   ParsedQs,
   RouteOptimizationLocals
-> = asyncHandler<RouteOptimizationLocals>(async (_request, response) => {
-  const data = await optimizeRoute(response.locals.validatedRequest.body);
+> = asyncHandler<RouteOptimizationLocals>(async (_request, response, next) => {
+  try {
+    const data = await optimizeRoute(response.locals.validatedRequest.body);
 
-  response
-    .status(200)
-    .json(ApiResponse.success("Route optimized successfully", data));
+    response
+      .status(200)
+      .json(ApiResponse.success("Route optimized successfully", data));
+  } catch (error: unknown) {
+    next(error);
+  }
 });

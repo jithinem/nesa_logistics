@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import mongoose from "mongoose";
+import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { environment } from "./config/environment";
@@ -10,11 +11,14 @@ import apiRouter from "./routes";
 import routeRouter from "./modules/routes/routes.routes";
 import analyticsRouter from "./modules/analytics/analytics.routes";
 import authRouter from "./modules/auth/auth.routes";
+import hubsRouter from "./modules/hubs/hubs.routes";
+import deliveriesRouter from "./modules/deliveries/deliveries.routes";
 
 const app = express();
 
 app.disable("x-powered-by");
 app.set("trust proxy", environment.trustProxy);
+app.use(morgan("dev"));
 app.use(helmet());
 app.use(
   cors({
@@ -52,6 +56,8 @@ app.get("/health/live", (_request, response) => {
 app.use("/api/routes", routeRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/hubs", hubsRouter);
+app.use("/api/deliveries", deliveriesRouter);
 app.use("/api/v1", apiRouter);
 app.use((_request, _response, next) => {
   next(new ApiError(404, "Resource not found."));

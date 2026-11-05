@@ -24,18 +24,22 @@ export const updateRouteTrafficController: RequestHandler<
   unknown,
   ParsedQs,
   TrafficUpdateLocals
-> = asyncHandler<TrafficUpdateLocals>(async (_request, response) => {
-  const { params, body } = response.locals.validatedRequest;
-  const data = await updateRouteTrafficAndRecalculate(params.routeId, body);
+> = asyncHandler<TrafficUpdateLocals>(async (_request, response, next) => {
+  try {
+    const { params, body } = response.locals.validatedRequest;
+    const data = await updateRouteTrafficAndRecalculate(params.routeId, body);
 
-  response
-    .status(200)
-    .json(
-      ApiResponse.success(
-        "Route traffic updated and active deliveries recalculated.",
-        data,
-      ),
-    );
+    response
+      .status(200)
+      .json(
+        ApiResponse.success(
+          "Route traffic updated and active deliveries recalculated.",
+          data,
+        ),
+      );
+  } catch (error: unknown) {
+    next(error);
+  }
 });
 
 export const updateRouteStatusController: RequestHandler<
@@ -44,16 +48,20 @@ export const updateRouteStatusController: RequestHandler<
   unknown,
   ParsedQs,
   RouteStatusUpdateLocals
-> = asyncHandler<RouteStatusUpdateLocals>(async (_request, response) => {
-  const { params, body } = response.locals.validatedRequest;
-  const data = await updateRouteStatusAndRecalculate(params.routeId, body);
+> = asyncHandler<RouteStatusUpdateLocals>(async (_request, response, next) => {
+  try {
+    const { params, body } = response.locals.validatedRequest;
+    const data = await updateRouteStatusAndRecalculate(params.routeId, body);
 
-  response
-    .status(200)
-    .json(
-      ApiResponse.success(
-        "Route status updated and active deliveries recalculated.",
-        data,
-      ),
-    );
+    response
+      .status(200)
+      .json(
+        ApiResponse.success(
+          "Route status updated and active deliveries recalculated.",
+          data,
+        ),
+      );
+  } catch (error: unknown) {
+    next(error);
+  }
 });

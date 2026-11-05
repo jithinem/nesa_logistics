@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createServer } from "node:http";
 import mongoose, { Types } from "mongoose";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -7,6 +8,11 @@ import { environment } from "../../src/config/environment";
 import { HubModel } from "../../src/modules/hubs/models/hub.model";
 import { RouteModel } from "../../src/modules/routes/models/route.model";
 import { UserModel } from "../../src/modules/auth/models/user.model";
+import { DeliveryModel } from "../../src/modules/deliveries/models/delivery.model";
+import {
+  closeSocketService,
+  initializeSocketService,
+} from "../../src/sockets/socket";
 import {
   RouteStatus,
   TrafficCondition,
@@ -25,6 +31,10 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
   let destinationHubId: Types.ObjectId;
   let routeIds: Types.ObjectId[];
   let userIds: Types.ObjectId[];
+  let adminToken: string;
+  let additionalHubIds: Types.ObjectId[] = [];
+  let additionalRouteIds: Types.ObjectId[] = [];
+  let deliveryIds: Types.ObjectId[] = [];
 
   beforeAll(async () => {
     if (!testMongoUri) {
@@ -39,6 +49,7 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
     }
 
     await mongoose.connect(testMongoUri);
+    initializeSocketService(createServer(app));
     originHubId = new Types.ObjectId();
     middleHubId = new Types.ObjectId();
     destinationHubId = new Types.ObjectId();
@@ -114,14 +125,30 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
       passwordHash: "not-used-by-token-tests",
       role: UserRole.OPERATOR,
     });
-    userIds = [operator._id];
+    const admin = await UserModel.create({
+      name: "Integration Admin",
+      email: `admin-${originHubId.toString()}@example.test`,
+      passwordHash: "not-used-by-token-tests",
+      role: UserRole.ADMIN,
+    });
+    userIds = [operator._id, admin._id];
     operatorToken = createToken(operator._id, UserRole.OPERATOR);
+    adminToken = createToken(admin._id, UserRole.ADMIN);
   });
 
   afterAll(async () => {
     if (mongoose.connection.readyState === 1) {
+      if (deliveryIds.length) {
+        await DeliveryModel.deleteMany({ _id: { $in: deliveryIds } });
+      }
+      if (additionalRouteIds.length) {
+        await RouteModel.deleteMany({ _id: { $in: additionalRouteIds } });
+      }
       if (routeIds?.length) {
         await RouteModel.deleteMany({ _id: { $in: routeIds } });
+      }
+      if (additionalHubIds.length) {
+        await HubModel.deleteMany({ _id: { $in: additionalHubIds } });
       }
       if (originHubId && middleHubId && destinationHubId) {
         await HubModel.deleteMany({
@@ -131,6 +158,7 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
       if (userIds?.length) {
         await UserModel.deleteMany({ _id: { $in: userIds } });
       }
+      await closeSocketService();
       await mongoose.disconnect();
     }
   });
@@ -249,6 +277,114 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
     expect([...cycle.routes].sort()).toEqual(
       routeIds.map((id) => id.toString()).sort(),
     );
+  });
+
+  it("creates, paginates, and retrieves hubs for admins", async () => {
+    const created = await request(app)
+      .post("/api/hubs")
+      .set(tokenHeader(adminToken))
+      .send({
+        name: "Integration API Hub",
+        code: `API${new Types.ObjectId().toString().slice(-8)}`,
+        location: { latitude: 35, longitude: -80 },
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.data).toMatchObject({
+      name: "Integration API Hub",
+      isActive: true,
+    });
+    const hubId = new Types.ObjectId(created.body.data._id);
+    additionalHubIds.push(hubId);
+
+    const page = await request(app)
+      .get("/api/hubs?page=1&limit=1")
+      .set(tokenHeader(adminToken));
+    expect(page.status).toBe(200);
+    expect(page.body.data.items).toHaveLength(1);
+    expect(page.body.data.pagination).toMatchObject({
+      page: 1,
+      limit: 1,
+    });
+
+    const found = await request(app)
+      .get(`/api/hubs/${hubId.toString()}`)
+      .set(tokenHeader(adminToken));
+    expect(found.status).toBe(200);
+    expect(found.body.data._id).toBe(hubId.toString());
+  });
+
+  it("creates and lists routes, and retains the admin-only status update", async () => {
+    const created = await request(app)
+      .post("/api/routes")
+      .set(tokenHeader(adminToken))
+      .send({
+        sourceHub: originHubId.toString(),
+        destinationHub: destinationHubId.toString(),
+        distance: 5,
+        travelTime: 8,
+        fuelCost: 3,
+        trafficCondition: TrafficCondition.LOW,
+        trafficMultiplier: 1,
+      });
+
+    expect(created.status).toBe(201);
+    const routeId = new Types.ObjectId(created.body.data._id);
+    additionalRouteIds.push(routeId);
+
+    const page = await request(app)
+      .get("/api/routes?page=1&limit=1")
+      .set(tokenHeader(operatorToken));
+    expect(page.status).toBe(200);
+    expect(page.body.data.items).toHaveLength(1);
+    expect(page.body.data.pagination.totalItems).toBeGreaterThanOrEqual(4);
+
+    const blocked = await request(app)
+      .patch(`/api/routes/${routeId.toString()}/status`)
+      .set(tokenHeader(adminToken))
+      .send({ status: RouteStatus.BLOCKED });
+    expect(blocked.status).toBe(200);
+    expect(blocked.body.data.route.status).toBe(RouteStatus.BLOCKED);
+
+    const available = await request(app)
+      .patch(`/api/routes/${routeId.toString()}/status`)
+      .set(tokenHeader(adminToken))
+      .send({ status: RouteStatus.AVAILABLE });
+    expect(available.status).toBe(200);
+    expect(available.body.data.route.status).toBe(RouteStatus.AVAILABLE);
+  });
+
+  it("creates, paginates, and retrieves deliveries for authenticated users", async () => {
+    const created = await request(app)
+      .post("/api/deliveries")
+      .set(tokenHeader(operatorToken))
+      .send({
+        originHub: originHubId.toString(),
+        destinationHub: destinationHubId.toString(),
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.data.routeOptimizationStatus).toBe("OPTIMIZED");
+    expect(created.body.data.currentRoute.length).toBeGreaterThan(0);
+    const deliveryId = new Types.ObjectId(created.body.data._id);
+    deliveryIds.push(deliveryId);
+
+    const page = await request(app)
+      .get("/api/deliveries?page=1&limit=1")
+      .set(tokenHeader(operatorToken));
+    expect(page.status).toBe(200);
+    expect(page.body.data.items).toHaveLength(1);
+    expect(page.body.data.pagination).toMatchObject({
+      page: 1,
+      limit: 1,
+    });
+    expect(page.body.data.pagination.totalItems).toBeGreaterThanOrEqual(1);
+
+    const found = await request(app)
+      .get(`/api/deliveries/${deliveryId.toString()}`)
+      .set(tokenHeader(operatorToken));
+    expect(found.status).toBe(200);
+    expect(found.body.data._id).toBe(deliveryId.toString());
   });
 });
 

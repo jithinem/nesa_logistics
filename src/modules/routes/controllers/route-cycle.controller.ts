@@ -17,15 +17,19 @@ export const getRouteCyclesController: RequestHandler<
   unknown,
   ParsedQs,
   RouteCyclesLocals
-> = asyncHandler<RouteCyclesLocals>(async (_request, response) => {
-  const data = await getRouteCycles();
+> = asyncHandler<RouteCyclesLocals>(async (_request, response, next) => {
+  try {
+    const data = await getRouteCycles();
 
-  response
-    .status(200)
-    .json(
-      ApiResponse.success(
-        data.hasCycle ? "Route cycles detected." : "No route cycles detected.",
-        data,
-      ),
-    );
+    response
+      .status(200)
+      .json(
+        ApiResponse.success(
+          data.hasCycle ? "Route cycles detected." : "No route cycles detected.",
+          data,
+        ),
+      );
+  } catch (error: unknown) {
+    next(error);
+  }
 });

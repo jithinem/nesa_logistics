@@ -35,9 +35,9 @@ src/
   modules/
     analytics/      Fastest available routes aggregation
     auth/           Registration, login, user model, and token verification
-    deliveries/     Delivery model and currently reserved API router
-    hubs/           Hub model and currently reserved API router
-    routes/         Optimization, cycle detection, and route recalculation
+    deliveries/     Delivery CRUD, model, and route initialization
+    hubs/           Hub CRUD and model
+    routes/         Route CRUD, optimization, cycle detection, and recalculation
   routes/           Versioned API router and health endpoint
   seed/             Deterministic development data
   shared/types/     Shared domain enums and interfaces
@@ -68,7 +68,8 @@ one locally:
 node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
 ```
 
-Never commit `.env` or put production credentials in a container image.
+Never commit `.env`; provide production credentials through the deployment
+environment or secret manager.
 
 | Variable | Required | Default | Description |
 |---|---:|---|---|
@@ -78,9 +79,15 @@ Never commit `.env` or put production credentials in a container image.
 | `MONGODB_TEST_URI` | For integration tests | — | Isolated test DB URI; its database name must end in `_test`. |
 | `MONGODB_MAX_POOL_SIZE` | No | `20` | MongoDB maximum connection pool size, 1–100 per application instance. |
 | `JWT_SECRET` | Yes | — | HS256 secret, minimum 32 characters. |
+| `ACCESS_TOKEN_LIFETIME` | No | `15m` | Access-token expiry as a positive integer followed by `s`, `m`, `h`, or `d`. |
+| `ACCESS_TOKEN_LIFETIME_SECONDS` | No | `900` | The same token expiry in seconds; must match `ACCESS_TOKEN_LIFETIME` (maximum one year). |
 | `CORS_ORIGIN` | No | `*` | Comma-separated allowed browser origins, or `*`. |
 | `ROUTE_GRAPH_CACHE_TTL_MS` | No | `30000` | In-process route graph cache TTL, 0–3,600,000 ms; zero disables caching. |
 | `TRUST_PROXY` | No | `0` | Number of trusted proxy hops; set to match the deployment topology. |
+| `SEED_ADMIN_EMAIL` | No | `admin@nesa.local` | Development seed administrator email. |
+| `SEED_ADMIN_PASSWORD` | Required by seed | — | Development admin password; 12–72 UTF-8 bytes. |
+| `SEED_OPERATOR_EMAIL` | No | `operator@nesa.local` | Development seed operator email. Must differ from admin email. |
+| `SEED_OPERATOR_PASSWORD` | Required by seed | — | Development operator password; 12–72 UTF-8 bytes. |
 
 `MONGODB_URI` and `JWT_SECRET` are validated when the application configuration
 loads. The same MongoDB database stores hubs, routes, deliveries, and users.
@@ -92,16 +99,25 @@ The app connects to the configured database when the server starts. Models are
 registered by Mongoose; indexes are declared in the schemas and are created by
 Mongoose according to its model initialization behavior.
 
-Seed the deterministic development graph:
+Set unique seed-user passwords in `.env`, then seed the deterministic development
+graph and development accounts:
 
 ```sh
+SEED_ADMIN_PASSWORD='choose-a-unique-admin-password'
+SEED_OPERATOR_PASSWORD='choose-a-unique-operator-password'
 npm run seed
 ```
 
 The seed command requires `NODE_ENV=development`. It upserts 10 hubs by their
 unique codes and 30 routes by fixed IDs. It includes alternate paths, cycles,
-high traffic, and blocked routes. It does not wipe the database or unrelated
-records, and it is safe to rerun.
+high traffic, and blocked routes. It also upserts one `ADMIN` and one
+`OPERATOR` user by email. Passwords must be 12–72 UTF-8 bytes and are stored
+using bcrypt hashes. Emails default to `admin@nesa.local` and
+`operator@nesa.local`; configure `SEED_ADMIN_EMAIL` and
+`SEED_OPERATOR_EMAIL` to change them. Set both seed passwords before running
+the command. Rerunning the seed refreshes these accounts' configured password
+hashes, roles, and active state. The seed does not wipe unrelated database
+records.
 
 ## Commands
 
@@ -125,7 +141,8 @@ still executes the unit suite.
 
 ## Authentication and authorization
 
-Register or log in to receive a 15-minute JWT access token. Tokens use HS256 and
+Register or log in to receive a JWT access token with lifetime configured by
+`ACCESS_TOKEN_LIFETIME` and `ACCESS_TOKEN_LIFETIME_SECONDS`. Tokens use HS256 and
 are verified with issuer, audience, expiry, user activity, and current database
 role checks. Public registration creates an `OPERATOR` only; clients cannot
 choose `ADMIN`. Provision an initial admin using a trusted database operator.
@@ -135,9 +152,8 @@ rejected.
 | Operation | Access |
 |---|---|
 | Register and login | Public; limited to 10 attempts per IP per 15 minutes |
-| Route optimization, cycles, fastest-route analytics | `ADMIN` or `OPERATOR` |
-| Update route traffic or status | `ADMIN` only |
-| Hub and delivery routers | Authentication/role middleware is present, but no hub/delivery operation handlers are implemented yet |
+| Route optimization, route listing, cycles, fastest-route analytics, delivery operations | `ADMIN` or `OPERATOR` |
+| Hub operations, route creation, route traffic or status updates | `ADMIN` only |
 
 Operational API requests use `Authorization: Bearer <accessToken>`.
 
@@ -214,6 +230,72 @@ hash):
 
 Registration responds with HTTP `201` and message `User registered
 successfully.`; login responds with HTTP `200`.
+
+### Hub APIs — `ADMIN`
+
+#### `POST /api/hubs`
+
+Creates a hub. `code` must be unique.
+
+```json
+{
+  "name": "Newark Logistics Hub",
+  "code": "EWR",
+  "location": { "latitude": 40.6895, "longitude": -74.1745 },
+  "isActive": true
+}
+```
+
+Responds with HTTP `201` and the created hub. `isActive` is optional and
+defaults to `true`.
+
+#### `GET /api/hubs?page=1&limit=20`
+
+Returns a page of hubs. `page` must be at least 1; `limit` must be between 1
+and 100. The response data has `items` and pagination metadata:
+
+```json
+{
+  "success": true,
+  "message": "Hubs retrieved successfully.",
+  "data": {
+    "items": [{ "_id": "507f1f77bcf86cd799439011", "name": "Newark Logistics Hub", "code": "EWR" }],
+    "pagination": { "page": 1, "limit": 20, "totalItems": 1, "totalPages": 1 }
+  }
+}
+```
+
+#### `GET /api/hubs/:hubId`
+
+Returns one hub; malformed IDs return `400` and missing hubs return `404`.
+
+### Route management
+
+#### `POST /api/routes` — `ADMIN`
+
+Creates a route between existing active hubs. Distance, travel time, and fuel
+cost must be non-negative; the traffic multiplier must be greater than zero.
+
+```json
+{
+  "sourceHub": "507f1f77bcf86cd799439011",
+  "destinationHub": "507f1f77bcf86cd799439022",
+  "distance": 25,
+  "travelTime": 45,
+  "fuelCost": 18,
+  "trafficCondition": "MEDIUM",
+  "trafficMultiplier": 1.2,
+  "status": "AVAILABLE"
+}
+```
+
+`status` is optional and defaults to `AVAILABLE`. The route graph cache is
+invalidated after creation.
+
+#### `GET /api/routes?page=1&limit=20` — `ADMIN` or `OPERATOR`
+
+Returns a page of routes with the same pagination metadata as the hub list.
+`limit` is capped at 100.
 
 ### Route optimization
 
@@ -391,12 +473,35 @@ in MongoDB before joining hub details:
 When no available routes exist, the endpoint responds successfully with an empty
 `data` array and message `No available routes found.`
 
-### Hub and delivery APIs
+### Delivery APIs — `ADMIN` or `OPERATOR`
 
-Hub and delivery schemas exist, but the mounted hub and delivery routers
-currently have no CRUD, list, or detail handlers. There are therefore no hub or
-delivery REST endpoints to call or document yet. Hub IDs can be obtained from
-MongoDB after seeding or from the `hubs` array returned by route optimization.
+#### `POST /api/deliveries`
+
+Creates a planned delivery between active hubs and initializes its route and
+cost metrics using the shared route optimizer. If no path is currently
+available, the delivery is still created with an empty route, zero metrics,
+and `routeOptimizationStatus: "NO_AVAILABLE_PATH"`.
+
+```json
+{
+  "originHub": "507f1f77bcf86cd799439011",
+  "destinationHub": "507f1f77bcf86cd799439022"
+}
+```
+
+Responds with HTTP `201` and the created delivery, including `currentRoute`,
+distance, effective travel time, fuel cost, calculated score, and
+`routeOptimizationStatus`.
+
+#### `GET /api/deliveries?page=1&limit=20`
+
+Returns a page of deliveries with pagination metadata. `limit` must be between
+1 and 100.
+
+#### `GET /api/deliveries/:deliveryId`
+
+Returns one delivery; malformed IDs return `400` and missing deliveries return
+`404`.
 
 ## Algorithms
 
@@ -446,8 +551,8 @@ Schemas declare:
 
 Route graph reads project only needed fields and use `lean()`. The in-process
 graph cache coalesces concurrent misses and defaults to a 30-second TTL.
-`ROUTE_GRAPH_CACHE_TTL_MS=0` disables it. Traffic/status updates invalidate the
-cache after successful route persistence; in-flight reads detect a revision
+`ROUTE_GRAPH_CACHE_TTL_MS=0` disables it. Route creation and traffic/status
+updates invalidate the cache after successful route persistence; in-flight reads detect a revision
 change and reload. Cache invalidation is process-local: in multi-instance
 deployments use a shared invalidation signal (for example Redis Pub/Sub) or
 disable caching to avoid another instance using its graph until TTL expiry.
@@ -484,21 +589,14 @@ such as route ID plus update version. The API can then return an
 accepted/in-progress response; workers persist the outcome and publish
 completion events. BullMQ and Redis are not dependencies of the MVP.
 
-The included multi-stage, non-root `Dockerfile` builds the TypeScript service:
-
-```sh
-docker build -t nesa-logistics .
-docker run --rm --env-file .env -p 3000:3000 nesa-logistics
-```
-
-Use a MongoDB hostname reachable from the container, not `localhost` unless
-MongoDB shares the container network appropriately. In production, run replicas
-behind a load balancer, configure `/health/ready` for readiness and
-`/health/live` for liveness, keep JWT secrets outside images, size MongoDB pools
-for total replicas, and monitor database, cache, queue, and socket health. The
-server handles `SIGINT`/`SIGTERM`, closes sockets and MongoDB, and treats
-uncaught exceptions and unhandled rejections as fatal after logging and
-initiating bounded graceful shutdown.
+For production, deploy the compiled `dist/` application on a Node.js host or
+process manager, run replicas behind a load balancer, configure `/health/ready`
+for readiness and `/health/live` for liveness, keep JWT secrets in a secret
+manager, size MongoDB pools for the total replica count, and monitor database,
+cache, queue, and socket health. The server handles `SIGINT`/`SIGTERM`, closes
+Socket.IO and MongoDB connections, and treats uncaught exceptions and
+unhandled rejections as fatal after logging and initiating bounded graceful
+shutdown.
 
 ## Postman
 
@@ -517,6 +615,7 @@ as sample variables. Route updates need an `ADMIN` token; public registration
 creates an `OPERATOR`, so use a trusted administrator account for those
 requests.
 
-The collection includes all implemented API requests. Hub and delivery folders
-are included as clearly marked placeholders only: those routers currently have
-no endpoints, so no fictitious operations are included.
+The collection includes the implemented authentication, hub, route,
+optimization, route update, cycle detection, analytics, and delivery APIs.
+Successful create requests save the returned route, hub, or delivery ID to the
+active environment where useful for follow-up requests.

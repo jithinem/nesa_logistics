@@ -17,17 +17,21 @@ export const getFastestRoutesController: RequestHandler<
   unknown,
   ParsedQs,
   FastestRoutesLocals
-> = asyncHandler<FastestRoutesLocals>(async (_request, response) => {
-  const data = await getFastestRoutes();
+> = asyncHandler<FastestRoutesLocals>(async (_request, response, next) => {
+  try {
+    const data = await getFastestRoutes();
 
-  response
-    .status(200)
-    .json(
-      ApiResponse.success(
-        data.length > 0
-          ? "Fastest available routes retrieved successfully."
-          : "No available routes found.",
-        data,
-      ),
-    );
+    response
+      .status(200)
+      .json(
+        ApiResponse.success(
+          data.length > 0
+            ? "Fastest available routes retrieved successfully."
+            : "No available routes found.",
+          data,
+        ),
+      );
+  } catch (error: unknown) {
+    next(error);
+  }
 });
