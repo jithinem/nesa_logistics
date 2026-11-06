@@ -337,6 +337,14 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
       .set(tokenHeader(operatorToken));
     expect(page.status).toBe(200);
     expect(page.body.data.items).toHaveLength(1);
+    expect(page.body.data.items[0].sourceHub).toMatchObject({
+      name: expect.any(String),
+      code: expect.any(String),
+    });
+    expect(page.body.data.items[0].destinationHub).toMatchObject({
+      name: expect.any(String),
+      code: expect.any(String),
+    });
     expect(page.body.data.pagination.totalItems).toBeGreaterThanOrEqual(4);
 
     const blocked = await request(app)
@@ -374,6 +382,18 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
       .set(tokenHeader(operatorToken));
     expect(page.status).toBe(200);
     expect(page.body.data.items).toHaveLength(1);
+    expect(page.body.data.items[0].originHub).toMatchObject({
+      name: expect.any(String),
+      code: expect.any(String),
+    });
+    expect(page.body.data.items[0].destinationHub).toMatchObject({
+      name: expect.any(String),
+      code: expect.any(String),
+    });
+    expect(page.body.data.items[0].currentRoute[0].sourceHub).toMatchObject({
+      name: expect.any(String),
+      code: expect.any(String),
+    });
     expect(page.body.data.pagination).toMatchObject({
       page: 1,
       limit: 1,
@@ -385,6 +405,18 @@ describe.skipIf(!testMongoUri)("API integration (test MongoDB)", () => {
       .set(tokenHeader(operatorToken));
     expect(found.status).toBe(200);
     expect(found.body.data._id).toBe(deliveryId.toString());
+    expect(found.body.data.originHub).toMatchObject({
+      name: "Integration Origin",
+      code: expect.any(String),
+    });
+    expect(found.body.data.destinationHub).toMatchObject({
+      name: "Integration Destination",
+      code: expect.any(String),
+    });
+    expect(found.body.data.currentRoute[0].destinationHub).toMatchObject({
+      name: expect.any(String),
+      code: expect.any(String),
+    });
   });
 });
 

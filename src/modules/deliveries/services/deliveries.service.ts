@@ -64,6 +64,17 @@ export const listDeliveries = async (query: ListDeliveriesQuery) => {
       .select(
         "_id originHub destinationHub currentRoute totalDistance totalTravelTime totalFuelCost totalCalculatedCost status routeOptimizationStatus createdAt updatedAt",
       )
+      .populate({ path: "originHub", select: "name code" })
+      .populate({ path: "destinationHub", select: "name code" })
+      .populate({
+        path: "currentRoute",
+        select:
+          "_id sourceHub destinationHub distance travelTime fuelCost trafficCondition trafficMultiplier status",
+        populate: [
+          { path: "sourceHub", select: "name code" },
+          { path: "destinationHub", select: "name code" },
+        ],
+      })
       .sort({ _id: 1 })
       .skip((query.page - 1) * query.limit)
       .limit(query.limit)
@@ -83,6 +94,17 @@ export const getDeliveryById = async ({ deliveryId }: DeliveryIdParams) => {
     .select(
       "_id originHub destinationHub currentRoute totalDistance totalTravelTime totalFuelCost totalCalculatedCost status routeOptimizationStatus createdAt updatedAt",
     )
+    .populate({ path: "originHub", select: "name code" })
+    .populate({ path: "destinationHub", select: "name code" })
+    .populate({
+      path: "currentRoute",
+      select:
+        "_id sourceHub destinationHub distance travelTime fuelCost trafficCondition trafficMultiplier status",
+      populate: [
+        { path: "sourceHub", select: "name code" },
+        { path: "destinationHub", select: "name code" },
+      ],
+    })
     .lean()
     .exec();
   if (!delivery) {

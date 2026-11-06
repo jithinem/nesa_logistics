@@ -295,7 +295,8 @@ invalidated after creation.
 #### `GET /api/routes?page=1&limit=20` — `ADMIN` or `OPERATOR`
 
 Returns a page of routes with the same pagination metadata as the hub list.
-`limit` is capped at 100.
+`limit` is capped at 100. `sourceHub` and `destinationHub` are populated with
+each hub's `name` and `code`.
 
 ### Route optimization
 
@@ -496,12 +497,14 @@ distance, effective travel time, fuel cost, calculated score, and
 #### `GET /api/deliveries?page=1&limit=20`
 
 Returns a page of deliveries with pagination metadata. `limit` must be between
-1 and 100.
+1 and 100. `originHub` and `destinationHub` include the hub `name` and `code`.
+The `currentRoute` route records are populated too, including their source and
+destination hub names and codes.
 
 #### `GET /api/deliveries/:deliveryId`
 
-Returns one delivery; malformed IDs return `400` and missing deliveries return
-`404`.
+Returns one delivery with populated origin/destination hubs and route endpoint
+hub names; malformed IDs return `400` and missing deliveries return `404`.
 
 ## Algorithms
 

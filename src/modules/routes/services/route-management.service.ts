@@ -39,6 +39,8 @@ export const listRoutes = async (query: ListRoutesQuery) => {
       .select(
         "_id sourceHub destinationHub distance travelTime fuelCost trafficCondition trafficMultiplier status createdAt updatedAt",
       )
+      .populate({ path: "sourceHub", select: "name code" })
+      .populate({ path: "destinationHub", select: "name code" })
       .sort({ _id: 1 })
       .skip((query.page - 1) * query.limit)
       .limit(query.limit)
